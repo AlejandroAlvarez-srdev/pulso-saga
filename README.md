@@ -1,4 +1,9 @@
-# pulso-saga
+<p align="center"><img src="assets/banner.svg" alt="pulso-saga" width="100%"></p>
+
+<p align="center"><img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript"> <img src="https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white" alt="Redis"> <img src="https://img.shields.io/badge/Vitest-6E9F18?style=for-the-badge&logo=vitest&logoColor=white" alt="Vitest"> <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker"> <img src="https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white" alt="GitHub Actions"> <img src="https://img.shields.io/badge/21_commits-6a178c?style=for-the-badge" alt="21 commits"></p>
+
+<h1 align="center">pulso-saga</h1>
+<!-- /header -->
 
 An orchestrated **Saga** for the Pulso order flow, built to show the distributed-systems
 patterns that keep a multi-service workflow correct when the network, the broker and a payment
@@ -14,6 +19,17 @@ checks that no order holds money or a pulser it should not.
 create order → authorize payment → assign pulser → capture payment → confirm order
 cancel order ← release auth      ← release pulser ← refund
 ```
+
+## At a glance
+
+<table>
+  <tr>
+    <td align="center" width="25%"><b>65 (61 offline + Redis)</b><br>Tests</td>
+    <td align="center" width="25%"><b>Breaker, backoff, bulkhead, DLQ</b><br>Patterns</td>
+    <td align="center" width="25%"><b>200 sagas · 0 inconsistencies</b><br>Simulator</td>
+    <td align="center" width="25%"><b>Eventual consistency, compensations</b><br>Model</td>
+  </tr>
+</table>
 
 ## Architecture
 
