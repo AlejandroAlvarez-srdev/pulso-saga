@@ -1,0 +1,37 @@
+services:
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  orchestrator:
+    build: .
+    command: ["node", "dist/apps/orchestrator.js"]
+    environment:
+      REDIS_URL: redis://redis:6379
+      PORT: "3000"
+      STEP_TIMEOUT_MS: "15000"
+    ports:
+      - "3000:3000"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  fake-services:
+    build: .
+    command: ["node", "dist/apps/fake-services.js"]
+    environment:
+      REDIS_URL: redis://redis:6379
+      PAYMENT_FAILURE_RATE: "0.2"
+      PAYMENT_TIMEOUT_RATE: "0.05"
+      PAYMENT_DECLINE_RATE: "0.05"
+      MERCHANT_WITHDRAW_RATE: "0.02"
+      PULSERS: "50"
+    depends_on:
+      redis:
+        condition: service_healthy
