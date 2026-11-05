@@ -9,6 +9,7 @@
 import { parseArgs } from "node:util";
 import { InMemoryProcessedMessageStore } from "../src/messaging/idempotency.js";
 import { InMemoryBus } from "../src/messaging/in-memory-bus.js";
+import { checkConsistency } from "../src/saga/invariants.js";
 import { SagaOrchestrator } from "../src/saga/orchestrator.js";
 import { InMemorySagaRepository } from "../src/saga/repository.js";
 import { TERMINAL_STATUSES, type SagaState } from "../src/saga/state.js";
@@ -104,11 +105,9 @@ async function main(): Promise<void> {
       }, config.outage.to),
     );
   }
-  const orderIds: string[] = [];
   // Arrivals spread over ~4s so the outage window hits sagas at different steps.
   for (let i = 0; i < config.sagas; i++) {
     const order = makeOrder(random);
-    orderIds.push(order.id);
     await orchestrator.start(order);
     await new Promise((r) => setTimeout(r, 4_000 / config.sagas));
   }
@@ -139,22 +138,8 @@ async function main(): Promise<void> {
   for (const letter of bus.deadLettered) dlqByType.set(letter.message.type, (dlqByType.get(letter.message.type) ?? 0) + 1);
   const logCount = (event: string) => sagas.reduce((n, s) => n + s.log.filter((e) => e.event === event).length, 0);
 
-  // Consistency invariants: what must hold once the system is quiet.
-  const violations: string[] = [];
-  const { orders, payments, assignments } = participants;
-  for (const s of completed) {
-    if (orders.get(s.sagaId)?.status !== "ASSIGNED") violations.push(`${s.sagaId}: completed but order not ASSIGNED`);
-    if (payments.status(s.sagaId) !== "CAPTURED") violations.push(`${s.sagaId}: completed but payment not CAPTURED`);
-    if (!assignments.assignmentFor(s.sagaId)) violations.push(`${s.sagaId}: completed without assignment`);
-  }
-  for (const s of compensated) {
-    if (orders.get(s.sagaId)?.status === "ASSIGNED") violations.push(`${s.sagaId}: compensated but order ASSIGNED`);
-    const p = payments.status(s.sagaId);
-    if (p === "AUTHORIZED" || p === "CAPTURED") violations.push(`${s.sagaId}: compensated but money held (${p})`);
-    if (assignments.assignmentFor(s.sagaId)) violations.push(`${s.sagaId}: compensated but pulser still assigned`);
-  }
-  const busyTasks = orderIds.reduce((n, id) => n + (assignments.assignmentFor(id) ? 1 : 0), 0);
-  if (busyTasks !== completed.length) violations.push(`pulser tasks ${String(busyTasks)} != completed ${String(completed.length)}`);
+  // Consistency invariants: what must hold once the system is quiet (shared with the property tests).
+  const violations = checkConsistency(sagas, participants);
 
   const total = sagas.length;
   const lines = [
