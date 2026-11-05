@@ -24,7 +24,7 @@ cancel order ← release auth      ← release pulser ← refund
 
 <table>
   <tr>
-    <td align="center" width="25%"><b>65 (61 offline + Redis)</b><br>Tests</td>
+    <td align="center" width="25%"><b>67 (63 offline + Redis)</b><br>Tests</td>
     <td align="center" width="25%"><b>Breaker, backoff, bulkhead, DLQ</b><br>Patterns</td>
     <td align="center" width="25%"><b>200 sagas · 0 inconsistencies</b><br>Simulator</td>
     <td align="center" width="25%"><b>Eventual consistency, compensations</b><br>Model</td>
@@ -296,7 +296,7 @@ dead letters when the redelivery chain outlasts the outage).
 
 ## Tests
 
-65 tests (61 run without Redis, 4 Redis integration tests run in CI against a Redis service):
+67 tests (63 run without Redis, 4 Redis integration tests run in CI against a Redis service):
 
 - `test/resilience` — circuit breaker transitions (closed → open → half-open → closed / re-open,
   trial-call limit, business errors ignored), backoff growth, caps and jitter bounds, retry
@@ -311,6 +311,38 @@ dead letters when the redelivery chain outlasts the outage).
   assignment scoring, capacity and bulkhead rejection.
 - `test/integration` — Redis Streams ack / PEL reclaim / DLQ, Lua commit, dedupe store and a
   full saga over Redis.
+- `test/saga/saga-properties.test.ts` — property-based tests, see below.
+
+### Property-based tests
+
+The example-based tests above pin one scenario each. `saga-properties.test.ts` uses
+[fast-check](https://fast-check.dev) to generate whole fault scenarios instead: 1–5 concurrent
+sagas sharing a pulser pool, provider 5xx / hang / decline rates, a full provider outage,
+pulser shortage, merchant withdrawals, invalid orders, duplicate deliveries, reordering jitter,
+and saga deadlines fired mid-flight so replies race their timeout. Two properties are checked:
+
+1. **Convergence.** Once the system is quiet, every saga is terminal and the consistency
+   invariants hold. The invariants live in `src/saga/invariants.ts` and are the same ones the
+   fault-injection simulator checks (it used to carry its own copy): completed ⇒ order
+   `ASSIGNED`, payment `CAPTURED`, one pulser; compensated ⇒ no money or pulser held; forward
+   steps in definition order; a step is only compensated if it ran, timed out or reported a
+   late success; pulser tasks held = completed sagas.
+2. **Replay is a no-op.** After convergence the provider recovers and every message ever
+   published — commands (dead-lettered ones included) and replies — is published again, as a
+   relay replaying its history or a consumer-group reset would. Order, payment, assignment and
+   saga states must be unchanged and only dead-lettered payment commands may reach the
+   provider again.
+
+The second property is what catches a missing tombstone. With the up-front `RELEASED` check in
+`PaymentService` disabled, it fails and fast-check shrinks the counterexample to a single
+order during a provider outage with a declining card: the replayed `payment.authorize` runs
+after the release and overwrites `RELEASED` with `DECLINED`.
+
+CI runs 40 + 30 scenarios with fixed seeds, so failures reproduce. For a deeper search:
+
+```bash
+SAGA_PROPERTY_RUNS=500 SAGA_PROPERTY_SEED=$RANDOM npx vitest run test/saga/saga-properties.test.ts
+```
 
 ## What this demonstrates
 
@@ -324,7 +356,8 @@ dead letters when the redelivery chain outlasts the outage).
   belong to which layer.
 - A port/adapter message bus with an in-memory adapter for fast deterministic tests and a Redis
   Streams adapter (consumer groups, ack, pending re-claim) for real deployments.
-- Fault injection with invariant checks as evidence of resilience, not just happy-path tests.
+- Fault injection and property-based tests (generated scenarios, shrunk counterexamples) checking
+  the same invariants, as evidence of resilience rather than happy-path tests.
 - Strict TypeScript, typed message catalogue, lint, CI and container build.
 
 ## License
