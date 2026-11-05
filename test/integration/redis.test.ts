@@ -71,8 +71,11 @@ describe.skipIf(!url)("Redis adapters (integration)", () => {
     await eventually(() => Promise.resolve(letters.some((l) => l.message.sagaId === "poison")));
     expect(ok).toEqual(["good"]);
     expect(deliveries).toEqual([1, 2, 3]);
-    const pending = (await redis.call("XPENDING", stream, "g")) as [number, ...unknown[]];
-    expect(pending[0]).toBe(0);
+    // The poison message is published to the DLQ first and only then XACKed (so it can never be
+    // lost), which means the dead letter can be observed a moment before the PEL drains.
+    const pendingCount = async () => ((await redis.call("XPENDING", stream, "g")) as [number, ...unknown[]])[0];
+    await eventually(async () => (await pendingCount()) === 0);
+    expect(await pendingCount()).toBe(0);
     await bus.close();
   });
 
